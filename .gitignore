@@ -1,0 +1,22 @@
+# Python
+backend/.venv/
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/*.db
+backend/uploads/
+backend/.env
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# OS / IDE
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+# Desktop build artefacts (later)
+desktop/**/dist/
+desktop/**/build/
+desktop/**/*.spec
