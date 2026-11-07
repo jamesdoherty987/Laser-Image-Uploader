@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from io import BytesIO
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.image_processing.laser import prepare_for_laser
 from app.models.job import Job, JobStatus
-from app.schemas.job import EditPrompt, JobOut, PrepareOptions
+from app.schemas.job import EditPrompt, JobOut, PrepareOptions, RevertRequest
 from app.services.ai_edit import edit_image
 from app.storage.local import LocalStorage, get_storage
 
@@ -102,6 +103,25 @@ def _source_key(job: Job) -> str | None:
     return job.original_key or None
 
 
+def _edit_history(job: Job) -> list[str]:
+    raw = (job.edit_history or "").strip()
+    if not raw:
+        # Back-compat: single edited_key with no history recorded yet
+        return [job.edited_key] if job.edited_key else []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return [job.edited_key] if job.edited_key else []
+    if not isinstance(data, list):
+        return [job.edited_key] if job.edited_key else []
+    return [str(item) for item in data if item]
+
+
+def _set_edit_history(job: Job, keys: list[str]) -> None:
+    job.edit_history = json.dumps(keys) if keys else None
+    job.edited_key = keys[-1] if keys else None
+
+
 def _metrics_for_job(
     job: Job, storage: LocalStorage
 ) -> tuple[int | None, int | None, int | None, float | None, float | None]:
@@ -128,6 +148,7 @@ def _metrics_for_job(
 
 
 def to_job_out(job: Job, storage: LocalStorage) -> JobOut:
+    history = _edit_history(job)
     edited_url = storage.public_url_path(job.edited_key) if job.edited_key else None
     prepared_url = storage.public_url_path(job.prepared_key) if job.prepared_key else None
     width, height, dpi, width_mm, height_mm = _metrics_for_job(job, storage)
@@ -146,6 +167,8 @@ def to_job_out(job: Job, storage: LocalStorage) -> JobOut:
         dpi=dpi,
         width_mm=width_mm,
         height_mm=height_mm,
+        edit_count=len(history),
+        can_undo_edit=len(history) > 0,
         created_at=job.created_at,
         updated_at=job.updated_at,
     )
@@ -286,17 +309,20 @@ def edit_job(
     try:
         source = store.read_bytes(source_key)
         edited_bytes = edit_image(cfg, source, payload.prompt)
-        edited_name = f"{Path(job.original_filename).stem}-edit.png"
+        history = _edit_history(job)
+        step = len(history) + 1
+        edited_name = f"{Path(job.original_filename).stem}-edit-{step}.png"
         edited_key = store.make_key("edited", edited_name, job.id)
         store.save_bytes(edited_key, edited_bytes)
-        job.edited_key = edited_key
+        history.append(edited_key)
+        _set_edit_history(job, history)
         job.current_key = edited_key
         job.prepared_key = None
         job.status = JobStatus.edited
         job.updated_at = _utcnow()
         db.commit()
         db.refresh(job)
-        logger.info("Edited job %s via AI", job.id)
+        logger.info("Edited job %s via AI (step %s)", job.id, step)
         return to_job_out(job, store)
     except HTTPException as exc:
         job.status = JobStatus.failed
@@ -311,6 +337,53 @@ def edit_job(
         job.updated_at = _utcnow()
         db.commit()
         raise HTTPException(status_code=500, detail=job.error_message) from exc
+
+
+def revert_job(
+    db: Session,
+    job_id: str,
+    payload: RevertRequest,
+    storage: LocalStorage | None = None,
+) -> JobOut:
+    """Undo the last AI edit, or restore the original upload."""
+    store = storage or get_storage()
+    job = db.get(Job, job_id)
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found.")
+
+    history = _edit_history(job)
+    if payload.target == "original":
+        if not history and not job.edited_key and not job.prepared_key:
+            raise HTTPException(status_code=400, detail="Nothing to revert.")
+        _set_edit_history(job, [])
+        job.current_key = job.original_key
+        job.prepared_key = None
+        job.status = JobStatus.uploaded
+        job.error_message = None
+        job.updated_at = _utcnow()
+        db.commit()
+        db.refresh(job)
+        logger.info("Reverted job %s to original", job.id)
+        return to_job_out(job, store)
+
+    # previous AI edit
+    if not history:
+        raise HTTPException(status_code=400, detail="No AI edits to undo.")
+    history = history[:-1]
+    _set_edit_history(job, history)
+    if history:
+        job.current_key = history[-1]
+        job.status = JobStatus.edited
+    else:
+        job.current_key = job.original_key
+        job.status = JobStatus.uploaded
+    job.prepared_key = None
+    job.error_message = None
+    job.updated_at = _utcnow()
+    db.commit()
+    db.refresh(job)
+    logger.info("Undid last AI edit on job %s (%s left)", job.id, len(history))
+    return to_job_out(job, store)
 
 
 def list_recent_jobs(
@@ -362,11 +435,21 @@ def delete_job(db: Session, job_id: str, storage: LocalStorage | None = None) ->
     job = db.get(Job, job_id)
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found.")
-    for key in (job.original_key, job.current_key, job.edited_key, job.prepared_key):
-        if key and store.exists(key):
-            try:
+    keys = {
+        job.original_key,
+        job.current_key,
+        job.edited_key,
+        job.prepared_key,
+        *_edit_history(job),
+    }
+    for key in keys:
+        if not key:
+            continue
+        try:
+            if store.exists(key):
                 store.delete(key)
-            except OSError:
-                logger.warning("Could not delete storage key %s for job %s", key, job_id)
+        except (OSError, ValueError):
+            logger.warning("Could not delete storage key %s for job %s", key, job_id)
     db.delete(job)
     db.commit()
+    logger.info("Deleted job %s", job_id)

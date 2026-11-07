@@ -94,6 +94,18 @@ export async function editJob(jobId: string, prompt: string): Promise<Job> {
   return data
 }
 
+export async function revertJob(
+  jobId: string,
+  target: 'previous' | 'original' = 'previous',
+): Promise<Job> {
+  const { data } = await api.post<Job>(`/api/images/${jobId}/revert`, { target })
+  return data
+}
+
+export async function deleteJob(jobId: string): Promise<void> {
+  await api.delete(`/api/images/${jobId}`)
+}
+
 export async function fetchRecentJobs(limit = 6): Promise<Job[]> {
   const { data } = await api.get<Job[]>('/api/images/', { params: { limit } })
   return data

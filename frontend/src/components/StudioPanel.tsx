@@ -4,11 +4,13 @@ import { FileUpload } from './FileUpload'
 import { StatusBadge } from './StatusBadge'
 import { WorkflowRail } from './WorkflowRail'
 import {
+  deleteJob,
   editJob,
   fetchRecentJobs,
   getErrorMessage,
   mediaUrl,
   prepareJob,
+  revertJob,
   uploadImage,
 } from '../services/api'
 import type { Job, PrepMode, PrepareOptions, StudioStep } from '../types/job'
@@ -72,6 +74,7 @@ export function StudioPanel() {
   const [uploading, setUploading] = useState(false)
   const [preparing, setPreparing] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [reverting, setReverting] = useState(false)
   const [progress, setProgress] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -158,6 +161,23 @@ export function StudioPanel() {
     setEditPrompt('')
   }
 
+  async function handleRemoveCurrent() {
+    if (busy) return
+    const current = job
+    setError(null)
+    if (current) {
+      try {
+        await deleteJob(current.id)
+        setRecent((list) => list.filter((row) => row.id !== current.id))
+      } catch (err) {
+        setError(getErrorMessage(err))
+        return
+      }
+    }
+    reset()
+    setNotice(current ? `Removed ${current.original_filename}` : null)
+  }
+
   async function handlePrepare() {
     if (!job) return
     setError(null)
@@ -184,11 +204,34 @@ export function StudioPanel() {
       const updated = await editJob(job.id, editPrompt.trim())
       setJob(updated)
       setAppliedPrep(null)
-      setNotice('AI edit applied. Press Prepare for laser to refresh the engraving preview.')
+      setNotice('AI edit applied. Update the laser preview when ready.')
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
       setEditing(false)
+    }
+  }
+
+  async function handleRevert(target: 'previous' | 'original') {
+    if (!job) return
+    setError(null)
+    setNotice(null)
+    setReverting(true)
+    try {
+      const updated = await revertJob(job.id, target)
+      setJob(updated)
+      setAppliedPrep(null)
+      setNotice(
+        target === 'original'
+          ? 'Restored the original photo.'
+          : updated.can_undo_edit
+            ? 'Undid the last AI edit.'
+            : 'Undid the last AI edit — back to the original.',
+      )
+    } catch (err) {
+      setError(getErrorMessage(err))
+    } finally {
+      setReverting(false)
     }
   }
 
@@ -204,8 +247,22 @@ export function StudioPanel() {
     setPrep((p) => ({ ...p }))
   }
 
+  async function handleDeleteRecent(item: Job) {
+    setError(null)
+    try {
+      await deleteJob(item.id)
+      setRecent((list) => list.filter((row) => row.id !== item.id))
+      if (job?.id === item.id) {
+        reset()
+      }
+      setNotice(`Removed ${item.original_filename}`)
+    } catch (err) {
+      setError(getErrorMessage(err))
+    }
+  }
+
   const step = deriveStep(job, Boolean(localPreview))
-  const busy = uploading || editing || preparing
+  const busy = uploading || editing || preparing || reverting
 
   const previewSrc = useMemo(() => {
     if (!job) return localPreview
@@ -248,24 +305,40 @@ export function StudioPanel() {
           <section className="stage" aria-label="Preview">
             <div className="preview">
               <div className="preview__meta">
-                {job ? <StatusBadge status={job.status} /> : null}
-                {uploading ? (
-                  <span className="preview__busy" role="status" aria-live="polite">
-                    Uploading… {progress}%
-                  </span>
-                ) : editing ? (
-                  <span className="preview__busy" role="status" aria-live="polite">
-                    AI editing…
-                  </span>
-                ) : preparing ? (
-                  <span className="preview__busy" role="status" aria-live="polite">
-                    Preparing laser artwork…
-                  </span>
-                ) : (
-                  <span className="preview__name">
-                    {job?.original_filename ?? localFile?.name ?? 'Your photo'}
-                  </span>
-                )}
+                <div className="preview__meta-main">
+                  {job ? <StatusBadge status={job.status} /> : null}
+                  {uploading ? (
+                    <span className="preview__busy" role="status" aria-live="polite">
+                      Uploading… {progress}%
+                    </span>
+                  ) : editing ? (
+                    <span className="preview__busy" role="status" aria-live="polite">
+                      AI editing…
+                    </span>
+                  ) : reverting ? (
+                    <span className="preview__busy" role="status" aria-live="polite">
+                      Reverting…
+                    </span>
+                  ) : preparing ? (
+                    <span className="preview__busy" role="status" aria-live="polite">
+                      Preparing laser artwork…
+                    </span>
+                  ) : (
+                    <span className="preview__name">
+                      {job?.original_filename ?? localFile?.name ?? 'Your photo'}
+                    </span>
+                  )}
+                </div>
+                {!uploading ? (
+                  <button
+                    type="button"
+                    className="preview__remove"
+                    onClick={() => void handleRemoveCurrent()}
+                    disabled={busy}
+                  >
+                    Remove photo
+                  </button>
+                ) : null}
               </div>
 
               {job ? (
@@ -341,9 +414,16 @@ export function StudioPanel() {
               {job && !uploading ? (
                 <div className="studio-tools">
                   <div className="studio-tools__block">
-                    <label className="studio-tools__label" htmlFor="ai-edit-prompt">
-                      AI edit
-                    </label>
+                    <div className="studio-tools__heading">
+                      <label className="studio-tools__label" htmlFor="ai-edit-prompt">
+                        AI edit
+                      </label>
+                      {job.edit_count > 0 ? (
+                        <span className="prep-pill prep-pill--ok">
+                          {job.edit_count} edit{job.edit_count === 1 ? '' : 's'}
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="studio-tools__hint">
                       Describe a change — remove background, simplify lines, boost subject…
                     </p>
@@ -367,6 +447,26 @@ export function StudioPanel() {
                         Apply edit
                       </button>
                     </div>
+                    {job.can_undo_edit ? (
+                      <div className="revert-row">
+                        <button
+                          type="button"
+                          className="btn btn--quiet"
+                          onClick={() => handleRevert('previous')}
+                          disabled={busy}
+                        >
+                          Undo last edit
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--quiet"
+                          onClick={() => handleRevert('original')}
+                          disabled={busy}
+                        >
+                          Restore original
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="studio-tools__block">
@@ -558,8 +658,13 @@ export function StudioPanel() {
                     Download laser file
                   </button>
                 )}
-                <button type="button" className="btn btn--quiet" onClick={reset} disabled={busy}>
-                  New photo
+                <button
+                  type="button"
+                  className="btn btn--quiet"
+                  onClick={() => void handleRemoveCurrent()}
+                  disabled={busy}
+                >
+                  Remove photo
                 </button>
               </div>
             </div>
@@ -574,7 +679,7 @@ export function StudioPanel() {
           </div>
           <ul className="recent__list">
             {recent.map((item) => (
-              <li key={item.id}>
+              <li key={item.id} className="recent__row">
                 <button
                   type="button"
                   className={`recent__item${job?.id === item.id ? ' is-active' : ''}`}
@@ -591,6 +696,19 @@ export function StudioPanel() {
                     <span className="recent__name">{item.original_filename}</span>
                     <StatusBadge status={item.status} />
                   </span>
+                </button>
+                <button
+                  type="button"
+                  className="recent__delete"
+                  aria-label={`Delete ${item.original_filename}`}
+                  title="Delete"
+                  disabled={busy}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void handleDeleteRecent(item)
+                  }}
+                >
+                  Delete
                 </button>
               </li>
             ))}

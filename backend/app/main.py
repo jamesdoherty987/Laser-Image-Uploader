@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import admin_jobs, content, desktop, images
@@ -60,6 +61,12 @@ app.include_router(content.router, prefix="/api")
 app.include_router(content.admin_router, prefix="/api")
 app.include_router(admin_jobs.router, prefix="/api")
 app.include_router(desktop.router, prefix="/api")
+
+
+@app.get("/")
+def root() -> RedirectResponse:
+    """API has no UI — send browsers to the Vite frontend."""
+    return RedirectResponse(url=settings.frontend_url, status_code=307)
 
 
 @app.get("/health")

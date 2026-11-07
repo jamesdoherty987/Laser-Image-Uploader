@@ -23,6 +23,8 @@ export type Job = {
   dpi: number | null
   width_mm: number | null
   height_mm: number | null
+  edit_count: number
+  can_undo_edit: boolean
   created_at: string
   updated_at: string
 }

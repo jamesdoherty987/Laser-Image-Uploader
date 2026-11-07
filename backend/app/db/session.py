@@ -41,6 +41,8 @@ def _ensure_sqlite_columns() -> None:
         existing = {row[1] for row in rows}
         if "edited_key" not in existing:
             conn.exec_driver_sql("ALTER TABLE jobs ADD COLUMN edited_key VARCHAR(512)")
+        if "edit_history" not in existing:
+            conn.exec_driver_sql("ALTER TABLE jobs ADD COLUMN edit_history TEXT")
 
 
 def get_db() -> Generator[Session, None, None]:

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.schemas.job import EditPrompt, JobOut, JobStatusOut, PrepareOptions
+from app.schemas.job import EditPrompt, JobOut, JobStatusOut, PrepareOptions, RevertRequest
 from app.services import images as image_service
 
 logger = logging.getLogger(__name__)
@@ -60,3 +60,19 @@ def edit_image(
 ) -> JobOut:
     """AI edit via Gemini (preferred) or OpenAI."""
     return image_service.edit_job(db, job_id, payload)
+
+
+@router.post("/{job_id}/revert", response_model=JobOut)
+def revert_image(
+    job_id: str,
+    payload: RevertRequest,
+    db: Session = Depends(get_db),
+) -> JobOut:
+    """Undo the last AI edit, or restore the original upload."""
+    return image_service.revert_job(db, job_id, payload)
+
+
+@router.delete("/{job_id}", status_code=204)
+def delete_image(job_id: str, db: Session = Depends(get_db)) -> None:
+    """Remove a job and its stored image files from Recent."""
+    image_service.delete_job(db, job_id)

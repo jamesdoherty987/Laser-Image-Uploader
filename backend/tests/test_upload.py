@@ -146,3 +146,52 @@ def test_edit_requires_api_key(client: TestClient, monkeypatch: pytest.MonkeyPat
     res = client.post(f"/api/images/{job_id}/edit", json={"prompt": "remove the background"})
     assert res.status_code == 400
     assert "GEMINI_API_KEY" in res.json()["detail"] or "API_KEY" in res.json()["detail"]
+
+
+def test_revert_ai_edits(client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    from app.services import images as image_service
+
+    def fake_edit(_settings, image_bytes: bytes, prompt: str) -> bytes:
+        # Return a distinct tiny PNG so storage keys differ
+        color = (10, 200, 40) if "second" in prompt else (200, 20, 20)
+        return _png_bytes(size=(32, 24), color=color)
+
+    monkeypatch.setattr(image_service, "edit_image", fake_edit)
+    files = {"file": ("sample.png", _png_bytes(), "image/png")}
+    uploaded = client.post("/api/images/upload", files=files)
+    job_id = uploaded.json()["id"]
+
+    first = client.post(f"/api/images/{job_id}/edit", json={"prompt": "first edit please"})
+    assert first.status_code == 200, first.text
+    assert first.json()["edit_count"] == 1
+    assert first.json()["can_undo_edit"] is True
+    first_edited = first.json()["edited_url"]
+
+    second = client.post(f"/api/images/{job_id}/edit", json={"prompt": "second edit please"})
+    assert second.status_code == 200, second.text
+    assert second.json()["edit_count"] == 2
+    assert second.json()["edited_url"] != first_edited
+
+    undo = client.post(f"/api/images/{job_id}/revert", json={"target": "previous"})
+    assert undo.status_code == 200, undo.text
+    assert undo.json()["edit_count"] == 1
+    assert undo.json()["edited_url"] == first_edited
+
+    original = client.post(f"/api/images/{job_id}/revert", json={"target": "original"})
+    assert original.status_code == 200, original.text
+    assert original.json()["edit_count"] == 0
+    assert original.json()["can_undo_edit"] is False
+    assert original.json()["edited_url"] is None
+    assert original.json()["status"] == "uploaded"
+
+
+def test_delete_job(client: TestClient):
+    files = {"file": ("gone.png", _png_bytes(), "image/png")}
+    uploaded = client.post("/api/images/upload", files=files)
+    job_id = uploaded.json()["id"]
+    deleted = client.delete(f"/api/images/{job_id}")
+    assert deleted.status_code == 204, deleted.text
+    missing = client.get(f"/api/images/{job_id}")
+    assert missing.status_code == 404
+    recent = client.get("/api/images/?limit=10")
+    assert job_id not in [item["id"] for item in recent.json()]

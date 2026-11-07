@@ -44,6 +44,8 @@ class Job(Base):
     original_key: Mapped[str] = mapped_column(String(512), nullable=False)
     current_key: Mapped[str] = mapped_column(String(512), nullable=False)
     edited_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # JSON list of successive AI-edit storage keys (oldest → newest)
+    edit_history: Mapped[str | None] = mapped_column(Text, nullable=True)
     prepared_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

@@ -23,6 +23,8 @@ class JobOut(BaseModel):
     dpi: int | None = None
     width_mm: float | None = None
     height_mm: float | None = None
+    edit_count: int = 0
+    can_undo_edit: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -57,6 +59,12 @@ class PrepareOptions(BaseModel):
 
 class EditPrompt(BaseModel):
     prompt: str = Field(min_length=3, max_length=800)
+
+
+class RevertRequest(BaseModel):
+    """Undo AI edits or restore the untouched original upload."""
+
+    target: Literal["previous", "original"] = "previous"
 
 
 class JobStatusUpdate(BaseModel):
