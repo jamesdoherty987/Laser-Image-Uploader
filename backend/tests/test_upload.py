@@ -85,3 +85,64 @@ def test_reject_oversized(client: TestClient, monkeypatch: pytest.MonkeyPatch):
     res = client.post("/api/images/upload", files=files)
     assert res.status_code == 400
     assert "large" in res.json()["detail"].lower()
+
+
+def test_prepare_returns_laser_ready_png(client: TestClient):
+    files = {"file": ("sample.png", _png_bytes(size=(120, 80), color=(210, 40, 40)), "image/png")}
+    uploaded = client.post("/api/images/upload", files=files)
+    assert uploaded.status_code == 200, uploaded.text
+    job_id = uploaded.json()["id"]
+
+    prepared = client.post(
+        f"/api/images/{job_id}/prepare",
+        json={
+            "mode": "floyd",
+            "contrast": 1.6,
+            "brightness": 1.05,
+            "sharpness": 1.2,
+            "denoise": 0.3,
+            "invert": False,
+            "width_mm": 50,
+            "dpi": 300,
+        },
+    )
+    assert prepared.status_code == 200, prepared.text
+    body = prepared.json()
+    assert body["status"] == "ready"
+    assert body["prepared_url"]
+    assert body["prepared_url"].endswith(".png")
+    assert body["dpi"] == 300
+    assert body["width_mm"] is not None
+    assert body["height_mm"] is not None
+    # 50mm @ 300 DPI ≈ 591 px wide
+    assert body["width"] == 591
+
+    recent = client.get("/api/images/?limit=5")
+    assert recent.status_code == 200
+    ids = [item["id"] for item in recent.json()]
+    assert job_id in ids
+
+
+def test_prepare_threshold_mode(client: TestClient):
+    files = {"file": ("line.png", _png_bytes(size=(80, 60), color=(30, 30, 30)), "image/png")}
+    uploaded = client.post("/api/images/upload", files=files)
+    job_id = uploaded.json()["id"]
+    prepared = client.post(
+        f"/api/images/{job_id}/prepare",
+        json={"mode": "threshold", "threshold": 100, "invert": True},
+    )
+    assert prepared.status_code == 200, prepared.text
+    assert prepared.json()["status"] == "ready"
+
+
+def test_edit_requires_api_key(client: TestClient, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        "app.services.images.get_settings",
+        lambda: Settings(gemini_api_key="", openai_api_key="", image_edit_provider="auto"),
+    )
+    files = {"file": ("sample.png", _png_bytes(), "image/png")}
+    uploaded = client.post("/api/images/upload", files=files)
+    job_id = uploaded.json()["id"]
+    res = client.post(f"/api/images/{job_id}/edit", json={"prompt": "remove the background"})
+    assert res.status_code == 400
+    assert "GEMINI_API_KEY" in res.json()["detail"] or "API_KEY" in res.json()["detail"]

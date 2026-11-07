@@ -2,7 +2,7 @@
 
 MVP web app: upload an image → AI-edit with natural language → prepare for laser engraving → send to CorelDRAW on a Windows PC via a small desktop connector.
 
-Self-contained folder — copy it elsewhere when you want its own repo.
+Self-contained folder; copy it elsewhere when you want its own repo.
 
 ## Stack (matched to Student Padel Ireland)
 
@@ -31,10 +31,11 @@ Send to Corel     ──HTTPS──►  job status = ready  ◄── poll/pull 
                                                    Teacher → GCC X252
 ```
 
-- **No accounts / payments** in this MVP.
+- Customer uploads appear in **Admin → Incoming jobs** for the laser operator.
+- Admin can prepare images, download laser-ready PNGs, mark jobs imported, and download the desktop connector.
 - API keys stay in backend `.env` only.
-- Desktop installs get a unique pairing token before they can download jobs.
-- CorelDRAW stays the final teacher-controlled step — we never drive the laser.
+- Desktop installs use a pairing token (shown in Admin) to pull ready jobs.
+- CorelDRAW stays the final operator-controlled step; we never drive the laser.
 
 ## Development stages
 
@@ -73,7 +74,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:5173 — Vite proxies `/api` and `/uploads` to the backend.
+Open http://localhost:5173. Vite proxies `/api` and `/uploads` to the backend.
 
 ### Tests
 
@@ -101,6 +102,9 @@ Laser-Image-Uploader/
 | `POST` | `/api/images/upload` | Multipart image upload → job |
 | `GET` | `/api/images/{id}` | Job + preview URLs |
 | `GET` | `/api/images/{id}/status` | Status only |
+| `GET` | `/api/admin/jobs` | Admin inbox of all customer jobs |
+| `GET` | `/api/admin/desktop/download` | Desktop connector zip |
+| `GET` | `/api/desktop/jobs` | Ready jobs for paired desktop app |
 
 Job statuses (full lifecycle): `uploaded` → `editing` → `edited` → `preparing` → `ready` → `downloading` → `imported` (or `failed`).
 

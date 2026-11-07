@@ -1,27 +1,40 @@
 # Desktop CorelDRAW connector
 
-**Stages 5–6 — not implemented yet.**
+Polls the Galvin Crafts API for laser-ready jobs, downloads prepared PNGs, and opens them in CorelDRAW (Windows COM) or the default image viewer.
 
-Planned layout:
+## Quick start (Windows PC next to the laser)
+
+1. Sign in to **Admin** on the website.
+2. Download the desktop connector zip and copy the **pairing token**.
+3. Unzip on the Windows PC.
+4. Double-click `run_connector.bat`, or:
+
+```bat
+cd coreldraw_connector
+python main.py --setup
+```
+
+5. Paste the API URL (e.g. `https://your-server`) and pairing token when prompted.
+6. Leave the connector running while customers upload. Ready jobs download automatically.
+
+## Files
 
 ```
 desktop/
+  run_connector.bat
   coreldraw_connector/
-    main.py          # background loop / tray
-    api_client.py    # HTTPS + pairing token
-    coreldraw.py     # COM automation + file-open fallback
-    downloader.py
+    main.py
+    api_client.py
     config.py
+    downloader.py
+    coreldraw.py
 ```
 
-Goals:
+Config is stored at `%USERPROFILE%\.galvin-crafts\connector.json`.
+Downloaded laser files go to `%USERPROFILE%\GalvinCrafts\laser-ready\` by default.
 
-- Run in the logged-in Windows user session (not a service)
-- Auto-start with Windows
-- Poll (or long-poll) for `ready` jobs
-- Download prepared PNG
-- Import into CorelDRAW via COM when available; otherwise open the file
-- Report `imported` / `failed` back to the API
-- Package with PyInstaller + simple installer
+## Notes
 
-Do not claim CorelDRAW automation works until tested against the installed version on the teacher laptop.
+- CorelDRAW COM import is attempted first on Windows; if COM is unavailable the file opens with the OS default.
+- Pairing token is created automatically by the backend and shown in Admin.
+- Admin can also download prepared files directly from the job inbox without this app.

@@ -6,8 +6,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import images
+from app.api import admin_jobs, content, desktop, images
 from app.core.config import get_settings
+from app.core.desktop_auth import ensure_pairing_token
 from app.db.session import init_db
 from app.storage.local import get_storage
 
@@ -27,12 +28,14 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     init_db()
     logger.info("Storage root: %s", UPLOAD_DIR)
+    token = ensure_pairing_token(settings)
+    logger.info("Desktop pairing token ready (%s…)", token[:6])
     if settings.is_production() and settings.secret_key in {
         "",
         "dev-secret-change-me",
         "change-me-to-a-long-random-string",
     }:
-        logger.warning("SECRET_KEY is still a default value — set a long random secret.")
+        logger.warning("SECRET_KEY is still a default value; set a long random secret.")
     yield
 
 
@@ -53,6 +56,10 @@ app.add_middleware(
 
 app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 app.include_router(images.router, prefix="/api")
+app.include_router(content.router, prefix="/api")
+app.include_router(content.admin_router, prefix="/api")
+app.include_router(admin_jobs.router, prefix="/api")
+app.include_router(desktop.router, prefix="/api")
 
 
 @app.get("/health")

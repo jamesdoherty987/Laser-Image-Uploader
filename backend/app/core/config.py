@@ -18,11 +18,17 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 10 * 1024 * 1024  # 10 MB
 
     openai_api_key: str = ""
+    gemini_api_key: str = ""
     image_edit_model: str = "gpt-image-1"
-    image_edit_provider: str = "openai"
+    gemini_image_model: str = "gemini-2.5-flash-image"
+    # gemini | openai | auto (prefer gemini when keyed)
+    image_edit_provider: str = "auto"
 
     desktop_pairing_token: str = ""
     cors_extra_origins: str = ""
+
+    admin_username: str = "admin"
+    admin_password: str = "galvin-admin"
 
     @field_validator("frontend_url", "backend_url", mode="before")
     @classmethod

@@ -5,6 +5,7 @@ backend/.pytest_cache/
 backend/*.db
 backend/uploads/
 backend/.env
+backend/.desktop_pairing_token
 
 # Node
 frontend/node_modules/

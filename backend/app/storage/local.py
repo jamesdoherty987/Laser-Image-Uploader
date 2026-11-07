@@ -18,11 +18,11 @@ class LocalStorage:
     def __init__(self, root: Path) -> None:
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
-        for sub in ("originals", "edited", "prepared", "tmp"):
+        for sub in ("originals", "edited", "prepared", "landing", "templates", "products", "tmp"):
             (self.root / sub).mkdir(parents=True, exist_ok=True)
 
     def _resolve(self, key: str) -> Path:
-        # Prevent path traversal — keys must stay under storage root
+        # Prevent path traversal; keys must stay under storage root
         cleaned = key.replace("\\", "/").lstrip("/")
         if ".." in cleaned.split("/"):
             raise ValueError("Invalid storage key")
@@ -43,6 +43,11 @@ class LocalStorage:
 
     def exists(self, key: str) -> bool:
         return self._resolve(key).is_file()
+
+    def delete(self, key: str) -> None:
+        path = self._resolve(key)
+        if path.is_file():
+            path.unlink()
 
     def absolute_path(self, key: str) -> Path:
         return self._resolve(key)

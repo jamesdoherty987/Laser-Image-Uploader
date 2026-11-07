@@ -2,12 +2,12 @@ import type { JobStatus } from '../types/job'
 
 const LABELS: Record<JobStatus, string> = {
   uploaded: 'Uploaded',
-  editing: 'Processing',
+  editing: 'Editing',
   edited: 'Edited',
   preparing: 'Preparing',
-  ready: 'Ready',
+  ready: 'Laser ready',
   downloading: 'Sending',
-  imported: 'Sent',
+  imported: 'In CorelDRAW',
   failed: 'Failed',
 }
 
